@@ -14,9 +14,9 @@ prim__x : forall a . a -> Int
 prim__y : forall a . a -> Int
 
 interface HasPosition a where
-  posX : (HasPosition o) => o -> Int
+  posX : a -> Int
   posX = prim__x
-  posY : (HasPosition o) => o -> Int
+  posY : a -> Int
   posY = prim__y
 
 HasPosition Creep where
@@ -62,7 +62,9 @@ simpleMove = do
        Nothing => pure ()
        Just c => case firstFlag of
                       Nothing => pure ()
-                      Just f => moveTo c f
+                      Just f => do
+                        consoleLog "moving..."
+                        moveTo c f
 
 simpleMove2: IO ()
 simpleMove2 = do
@@ -70,7 +72,7 @@ simpleMove2 = do
   flags <- getObjectsByPrototypeFlag
   let firstCreep : (Maybe Creep) = readMaybe creeps 0
   let firstFlag : (Maybe Flag) = readMaybe flags 0
-  let result : (Maybe $ IO ()) = (the (Maybe $ IO ()) [| ?hole firstCreep firstFlag |])
+  let result : (Maybe $ IO ()) = (the (Maybe $ IO ()) (?hole <$> firstCreep <*> firstFlag))
   pure ()
 {-
   case (the (Maybe $ IO ()) [| moveTo firstCreep firstFlag |]) of
@@ -88,7 +90,9 @@ simpleMove3 = do
     creep <- firstCreep
     flag <- firstFlag
     pure (the (IO ()) (moveTo creep flag))
-  consoleLog $ jsShow result
+  case result of
+       Nothing => pure ()
+       Just io => io
 
 main : IO ()
 main = simpleMove
