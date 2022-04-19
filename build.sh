@@ -1,6 +1,6 @@
 #!/bin/bash
-echo 'Building Idris project using inigo...'
-inigo build javascript
+echo 'Building Idris project...'
+idris2 --build IdrisScreepsArena.ipkg --cg javascript
 
 echo 'Adding imports and exports...'
 cp -f ./build/exec/IdrisScreepsArena ./main.mjs
