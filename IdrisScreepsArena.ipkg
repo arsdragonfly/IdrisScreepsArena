@@ -3,7 +3,7 @@ package IdrisScreepsArena
 modules = Main 
 
 
-sourcedir = "."
+sourcedir = "src"
 builddir = "build"
 
 version = 0.0.1

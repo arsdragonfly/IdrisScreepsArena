@@ -2,4 +2,6 @@
 
 Screeps Arena AI using [Idris 2](https://github.com/idris-lang/Idris2).
 
-Use [inigo](https://github.com/idris-community/inigo) to set up the project. Use `build.sh` to build the final JS module.
+This project depends on JS module from [idris2-dom](https://github.com/stefan-hoeck/idris2-dom).
+
+Use `build.sh` to build the final JS module.
