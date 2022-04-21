@@ -111,15 +111,15 @@ Owned Creep where
 prim__getObjectsByPrototypeCreep : PrimIO (IArray Creep)
 
 export
-getObjectsByPrototypeCreep : (HasIO io) => io (IArray Creep)
-getObjectsByPrototypeCreep = primIO prim__getObjectsByPrototypeCreep
+getObjectsByPrototypeCreep : (HasIO io) => io (List Creep)
+getObjectsByPrototypeCreep = map arrayToList $ primIO prim__getObjectsByPrototypeCreep
 
 %foreign "javascript:lambda: () => getObjectsByPrototype(Flag)"
 prim__getObjectsByPrototypeFlag : PrimIO (IArray Flag)
 
 export
-getObjectsByPrototypeFlag : (HasIO io) => io (IArray Flag)
-getObjectsByPrototypeFlag = primIO prim__getObjectsByPrototypeFlag
+getObjectsByPrototypeFlag : (HasIO io) => io (List Flag)
+getObjectsByPrototypeFlag = map arrayToList $ primIO prim__getObjectsByPrototypeFlag
 
 %foreign "javascript:lambda: () => getTicks()"
 prim__getTicks : PrimIO Int
@@ -156,14 +156,28 @@ nsFrom :  Generic t code
        -> NS I ts
 nsFrom v = nsFromSOP $ from v
 
+transformReturnCode : PrimIO (Union2 ScreepsError ScreepsOK) -> JSIO (Maybe $ Either ScreepsError ScreepsOK)
+transformReturnCode ret = do
+  result <- primJS ret
+  pure (map nsTo (fromUnion2 result))
+
 %foreign "javascript:lambda:(u, creep, target) => creep.moveTo(target)"
 prim__moveTo : forall a . Creep -> a -> PrimIO (Union2 ScreepsError ScreepsOK)
 
 export
 moveTo : (HasPosition o) => Creep -> o -> JSIO (Either ScreepsError ScreepsOK)
-moveTo creep target = unMaybe "moveTo" jsio where
-  jsio : JSIO (Maybe $ Either ScreepsError ScreepsOK)
-  jsio = do
-    result <- primJS (prim__moveTo creep target)
-    pure (map nsTo (fromUnion2 result))
+moveTo creep target = unMaybe "moveTo" $ transformReturnCode $ prim__moveTo creep target
+
+%foreign "javascript:lambda:(u, creep, target) => creep.attack(target)"
+prim__attack : forall a . Creep -> a -> PrimIO (Union2 ScreepsError ScreepsOK)
+
+export
+interface Attackable a where
+
+export
+Attackable Creep where
+
+export
+attack : (Attackable o) => Creep -> o -> JSIO (Either ScreepsError ScreepsOK)
+attack creep target = unMaybe "attack" $ transformReturnCode $ prim__attack creep target
 
