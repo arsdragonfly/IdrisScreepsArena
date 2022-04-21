@@ -1,6 +1,8 @@
 module IdrisScreepsArena.FFI
 
 import JS
+import Data.SOP
+import Generics.Derive
 
 export data Creep : Type where [external]
 
@@ -76,23 +78,34 @@ SafeCast ScreepsError where
     check err = if eqv v err then Just err else Nothing
 
 %foreign "javascript:lambda:(u, x) => x.x"
-prim__x : forall a . a -> Int
+prim__x : forall a . a -> PrimIO Int
 
 %foreign "javascript:lambda:(u, x) => x.y"
-prim__y : forall a . a -> Int
+prim__y : forall a . a -> PrimIO Int
 
 export
 interface HasPosition a where
-  posX : a -> Int
-  posX = prim__x
-  posY : a -> Int
-  posY = prim__y
+  posX : (HasIO io) => a -> io Int
+  posX v = primIO (prim__x v)
+  posY : (HasIO io) => a -> io Int
+  posY v = primIO (prim__y v)
 
 export
 HasPosition Creep where
 
 export
 HasPosition Flag where
+
+%foreign "javascript:lambda:(u, x) => x.my"
+prim__my : forall a . a -> PrimIO Boolean
+
+export
+interface Owned a where
+  my : a -> JSIO Bool
+  my v = tryJS "my" $ prim__my v
+
+export
+Owned Creep where
 
 %foreign "javascript:lambda: () => getObjectsByPrototype(Creep)"
 prim__getObjectsByPrototypeCreep : PrimIO (IArray Creep)
@@ -114,3 +127,43 @@ prim__getTicks : PrimIO Int
 export
 getTicks : (HasIO io) => io Int
 getTicks = primIO prim__getTicks
+
+-- courtesy of stefan-hoeck
+data SingletonsOf : (ks : List k) -> (kss : List (List k)) -> Type where
+  [search kss]
+  SNil : SingletonsOf [] []
+  SCons : SingletonsOf ks kss -> SingletonsOf (k :: ks) ([k] :: kss)
+
+nsToSOP : NS_ k f ks -> (prf : SingletonsOf ks kss) => SOP_ k f kss
+nsToSOP (Z v) {prf = SCons so} = MkSOP (Z [v])
+nsToSOP (S x) {prf = SCons so} = let MkSOP v = nsToSOP x in MkSOP (S v)
+
+export
+nsTo :  Generic t code
+     => SingletonsOf ts code
+     => NS I ts
+     -> t
+nsTo ns = to $ nsToSOP ns
+
+nsFromSOP : SOP_ k f kss -> (prf : SingletonsOf ks kss) => NS_ k f ks
+nsFromSOP (MkSOP $ Z [v]) {prf = SCons so} = Z v
+nsFromSOP (MkSOP $ S x)   {prf = SCons so} = S $ nsFromSOP (MkSOP x)
+
+export
+nsFrom :  Generic t code
+       => SingletonsOf ts code
+       => t
+       -> NS I ts
+nsFrom v = nsFromSOP $ from v
+
+%foreign "javascript:lambda:(u, creep, target) => creep.moveTo(target)"
+prim__moveTo : forall a . Creep -> a -> PrimIO (Union2 ScreepsError ScreepsOK)
+
+export
+moveTo : (HasPosition o) => Creep -> o -> JSIO (Either ScreepsError ScreepsOK)
+moveTo creep target = unMaybe "moveTo" jsio where
+  jsio : JSIO (Maybe $ Either ScreepsError ScreepsOK)
+  jsio = do
+    result <- primJS (prim__moveTo creep target)
+    pure (map nsTo (fromUnion2 result))
+

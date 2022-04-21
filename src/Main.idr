@@ -2,20 +2,12 @@ module Main
 
 import IdrisScreepsArena
 import Data.List
+import Data.SOP
+import Generics.SOP
+import Generics.Derive
 import JS
 
--- TODO: handle return values
-%foreign "javascript:lambda:(u, creep, target) => creep.moveTo(target)"
-prim__moveTo : forall a . Creep -> a -> PrimIO ()
-
-%foreign "javascript:lambda:(u, creep, target) => creep.moveTo(target)"
-prim__moveToWithReturn : forall a . Creep -> a -> PrimIO (Union2 ScreepsError ScreepsOK)
-
-moveTo : (HasIO io, HasPosition o) => Creep -> o -> io ()
-moveTo creep o = primIO (prim__moveTo creep o)
-
-moveTo2 : (HasPosition o) => Creep -> o -> IO ()
-moveTo2 = moveTo
+%default total
 
 printTicks: (HasIO io) => io ()
 printTicks = do
@@ -30,7 +22,6 @@ simpleMove2 = do
   let firstFlag : (Maybe Flag) = readMaybe flags 0
   let result : (Maybe $ IO ()) = (the (Maybe $ IO ()) (?hole <$> firstCreep <*> firstFlag))
   pure ()
-
 -- TODO: find out why this won't work
 {-
   case (the (Maybe $ IO ()) [| moveTo firstCreep firstFlag |]) of
@@ -38,18 +29,20 @@ simpleMove2 = do
        Nothing => pure ()
 -}
 
-simpleMove: IO ()
+simpleMove: JSIO ()
 simpleMove = do
   creeps <- getObjectsByPrototypeCreep
   flags <- getObjectsByPrototypeFlag
   let action = do
     creep <- readMaybe creeps 0
     flag <- readMaybe flags 0
-    pure (the (IO ()) (moveTo creep flag))
+    pure (the (JSIO _) (moveTo creep flag))
   case action of
        Nothing => consoleLog "creep or target not found"
-       Just action => action
+       Just action => do
+         moveResult <- action
+         pure ()
 
 main : IO ()
-main = simpleMove
+main = runJS simpleMove
 
