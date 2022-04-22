@@ -6,7 +6,7 @@ import Generics.Derive
 
 export
 filterM : Applicative m => (a -> m Bool) -> List a -> m $ List a
-filterM p = foldr (\x, acc => [|(\flg, l => ifThenElse flg (x :: l) l) (p x) acc|]) (pure [])
+filterM p = foldr (\x => ?h) (pure [])
 
 export data Creep : Type where [external]
 

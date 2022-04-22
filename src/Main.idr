@@ -37,27 +37,12 @@ simpleMove = do
     | Left err => consoleLog $ jsShow err
   consoleLog "approaching..."
 
-fromBool : Bool -> a -> Maybe a
-fromBool b val = if b then Just val else Nothing
-
-ownCreep : Creep -> JSIO $ Maybe Creep
-ownCreep creep = pure (fromBool !(my creep) creep)
-
-enemyCreep : Creep -> JSIO $ Maybe Creep
-enemyCreep creep = pure (fromBool (not !(my creep)) creep)
-
-findOwnCreeps : List Creep -> JSIO $ List Creep
-findOwnCreeps creeps = pure (mapMaybe id !(traverse ownCreep creeps))
-
-findEnemyCreeps : List Creep -> JSIO $ List Creep
-findEnemyCreeps creeps = pure (mapMaybe id !(traverse enemyCreep creeps))
-
 firstAttack : JSIO ()
 firstAttack = do
   creeps <- getObjectsByPrototypeCreep
-  Just creep <- map head' $ findOwnCreeps creeps
+  Just creep <- map head' $ filterM my creeps
     | Nothing => consoleLog "creep not found"
-  Just enemy <- map head' $ findEnemyCreeps creeps
+  Just enemy <- map head' $ filterM ((map not) . my) creeps
     | Nothing => consoleLog "enemy not found"
   Right okay <- attack creep enemy
     | Left _ => do
