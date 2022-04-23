@@ -1,98 +1,186 @@
 module IdrisScreepsArena.FFI
 
 import JS
+import JS.JSON
 import Data.SOP
 import Generics.Derive
+
+%language ElabReflection
 
 export
 filterM : Applicative m => (a -> m Bool) -> List a -> m $ List a
 filterM p = foldr (\x, acc => [|(\flg, l => ifThenElse flg (x :: l) l) (p x) acc|]) (pure [])
 
+checkBy : (a -> b -> Bool) -> a -> b -> Maybe b
+checkBy eq a target = if eq a target then Just target else Nothing
+
 export data Creep : Type where [external]
 
 export data Flag : Type where [external]
 
-export data ScreepsOK : Type where [external]
+toJSONwithToFFI : {auto tf : ToFFI a b} -> {auto tj : ToJSON b} -> (a -> Value)
+toJSONwithToFFI = toJSON@{tj} . toFFI@{tf}
+
+fromJSONwithFromFFI : {auto ff : FromFFI a b} -> {auto fj : FromJSON b} -> Parser a
+fromJSONwithFromFFI = \val => do
+    bb <- fromJSON@{fj} val
+    Just aa <- pure (fromFFI@{ff} bb)
+      | Nothing => fail #"fromFFI failed for \#{jsShow bb}"#
+    pure aa
 
 export
+(ToFFI a b, ToJSON b) => ToJSON a where
+  toJSON = toJSONwithToFFI
+
+export
+(FromFFI a b, FromJSON b) => FromJSON a where
+  fromJSON = fromJSONwithFromFFI
+
+data PrimScreepsOK : Type where [external]
+
 %foreign "javascript:lambda:() => OK"
-ok : ScreepsOK
+prim__ok : PrimScreepsOK
+
+SafeCast PrimScreepsOK where
+  safeCast v = if eqv v prim__ok then Just prim__ok else Nothing
+
+ToJSON PrimScreepsOK where
+  toJSON = Num . believe_me
+
+FromJSON PrimScreepsOK where
+  fromJSON = withNumber "PrimScreepsOK" (\n => case safeCast n of
+    Just v => pure v
+    Nothing => fail #"cannot cast \#{jsShow n} to PrimScreepsOK"#)
+
+public export
+data ScreepsOK = OK
+
+%runElab derive "ScreepsOK" [Generic, Meta, Eq, Ord, Show]
+
+FromFFI ScreepsOK PrimScreepsOK where fromFFI _ = Just OK
+
+ToFFI ScreepsOK PrimScreepsOK where toFFI _ = prim__ok
 
 export
-SafeCast ScreepsOK where
-  safeCast v = if eqv v ok then Just ok else Nothing
-
-export data ScreepsError : Type where [external]
+FromJSON ScreepsOK where
+  fromJSON = fromJSONwithFromFFI
 
 export
+ToJSON ScreepsOK where
+  toJSON = toJSONwithToFFI
+
+data PrimScreepsError : Type where [external]
+
 %foreign "javascript:lambda:() => ERR_NOT_OWNER"
-errNotOwner : ScreepsError
+prim__errNotOwner : PrimScreepsError
 
-export
 %foreign "javascript:lambda:() => ERR_NO_PATH"
-errNoPath : ScreepsError
+prim__errNoPath : PrimScreepsError
 
-export
 %foreign "javascript:lambda:() => ERR_NAME_EXISTS"
-errNameExists : ScreepsError
+prim__errNameExists : PrimScreepsError
 
-export
 %foreign "javascript:lambda:() => ERR_BUSY"
-errBusy : ScreepsError
+prim__errBusy : PrimScreepsError
 
-export
 %foreign "javascript:lambda:() => ERR_NOT_FOUND"
-errNotFound : ScreepsError
+prim__errNotFound : PrimScreepsError
 
 -- we ignore other aliases for this constant (ERR_NOT_ENOUGH_ENERGY and ERR_NOT_ENOUGH_EXTENSIONS)
-export
 %foreign "javascript:lambda:() => ERR_NOT_ENOUGH_RESOURCES"
-errNotEnoughResources : ScreepsError
+prim__errNotEnoughResources : PrimScreepsError
 
-export
 %foreign "javascript:lambda:() => ERR_INVALID_TARGET"
-errInvalidTarget : ScreepsError
+prim__errInvalidTarget : PrimScreepsError
 
-export
 %foreign "javascript:lambda:() => ERR_FULL"
-errFull : ScreepsError
+prim__errFull : PrimScreepsError
 
-export
 %foreign "javascript:lambda:() => ERR_NOT_IN_RANGE"
-errNotInRange : ScreepsError
+prim__errNotInRange : PrimScreepsError
 
-export
 %foreign "javascript:lambda:() => ERR_INVALID_ARGS"
-errInvalidArgs : ScreepsError
+prim__errInvalidArgs : PrimScreepsError
 
-export
 %foreign "javascript:lambda:() => ERR_TIRED"
-errTired : ScreepsError
+prim__errTired : PrimScreepsError
 
-export
 %foreign "javascript:lambda:() => ERR_NO_BODYPART"
-errNoBodypart : ScreepsError
+prim__errNoBodypart : PrimScreepsError
 
 export
-SafeCast ScreepsError where
-  safeCast v = choiceMap check screepsErrors where
-    screepsErrors : List ScreepsError
-    screepsErrors = [errNotOwner, errNoPath, errNameExists, errBusy, errNotFound, errNotEnoughResources, errInvalidTarget, errFull, errNotInRange, errInvalidArgs, errTired, errNoBodypart]
-    check : (err : ScreepsError) -> Maybe ScreepsError
-    check err = if eqv v err then Just err else Nothing
+data ScreepsError = ErrNotOwner | ErrNoPath | ErrNameExists | ErrBusy | ErrNotFound | ErrNotEnoughResources | ErrInvalidTarget | ErrFull | ErrNotInRange | ErrInvalidArgs | ErrTired | ErrNoBodypart
 
+%runElab derive "ScreepsError" [Generic, Meta, Eq, Ord, Show]
+
+screepsErrors : List (ScreepsError, PrimScreepsError)
+screepsErrors = [
+  (ErrNotOwner, prim__errNotOwner),
+  (ErrNoPath, prim__errNoPath),
+  (ErrNameExists, prim__errNameExists),
+  (ErrBusy, prim__errBusy),
+  (ErrNotFound, prim__errNotFound),
+  (ErrNotEnoughResources, prim__errNotEnoughResources),
+  (ErrInvalidTarget, prim__errInvalidTarget),
+  (ErrFull, prim__errFull),
+  (ErrNotInRange, prim__errNotInRange),
+  (ErrInvalidArgs, prim__errInvalidArgs),
+  (ErrTired, prim__errTired),
+  (ErrNoBodypart, prim__errNoBodypart)
+  ]
+
+SafeCast PrimScreepsError where
+  safeCast v = choiceMap (checkBy eqv v) (map snd screepsErrors)
+
+ToJSON PrimScreepsError where
+  toJSON = Num . believe_me
+
+FromJSON PrimScreepsError where
+  fromJSON = withNumber "PrimScreepsError" (\n => case safeCast n of
+    Just v => pure v
+    Nothing => fail #"cannot cast \#{jsShow n} to PrimScreepsError"#)
+
+FromFFI ScreepsError PrimScreepsError where
+  fromFFI v = choiceMap check screepsErrors where
+    check : (err : (ScreepsError, PrimScreepsError)) -> Maybe ScreepsError
+    check (e, pe) = if eqv v pe then Just e else Nothing
+
+-- TODO: get rid of the repetition here
+ToFFI ScreepsError PrimScreepsError where
+  toFFI ErrNotOwner = prim__errNotOwner
+  toFFI ErrNoPath = prim__errNoPath
+  toFFI ErrNameExists = prim__errNameExists
+  toFFI ErrBusy = prim__errBusy
+  toFFI ErrNotFound = prim__errNotFound
+  toFFI ErrNotEnoughResources = prim__errNotEnoughResources
+  toFFI ErrInvalidTarget = prim__errInvalidTarget
+  toFFI ErrFull = prim__errFull
+  toFFI ErrNotInRange = prim__errNotInRange
+  toFFI ErrInvalidArgs = prim__errInvalidArgs
+  toFFI ErrTired = prim__errTired
+  toFFI ErrNoBodypart = prim__errNoBodypart
+
+export
+FromJSON ScreepsError where
+  fromJSON = fromJSONwithFromFFI
+
+export
+ToJSON ScreepsError where
+  toJSON = toJSONwithToFFI
+
+-- if 'exists' is false (which happens for cached and newly created objects), x and y will be undefined
 %foreign "javascript:lambda:(u, x) => x.x"
-prim__x : forall a . a -> PrimIO Int
+prim__x : forall a . a -> PrimIO (UndefOr Int32)
 
 %foreign "javascript:lambda:(u, x) => x.y"
-prim__y : forall a . a -> PrimIO Int
+prim__y : forall a . a -> PrimIO (UndefOr Int32)
 
 export
 interface HasPosition a where
-  posX : (HasIO io) => a -> io Int
-  posX v = primIO (prim__x v)
-  posY : (HasIO io) => a -> io Int
-  posY v = primIO (prim__y v)
+  posX : (HasIO io) => a -> io (Maybe Int32)
+  posX v = map undeforToMaybe (primIO (prim__x v))
+  posY : (HasIO io) => a -> io (Maybe Int32)
+  posY v = map undeforToMaybe (primIO (prim__y v))
 
 export
 HasPosition Creep where
@@ -126,10 +214,10 @@ getObjectsByPrototypeFlag : (HasIO io) => io (List Flag)
 getObjectsByPrototypeFlag = map arrayToList $ primIO prim__getObjectsByPrototypeFlag
 
 %foreign "javascript:lambda: () => getTicks()"
-prim__getTicks : PrimIO Int
+prim__getTicks : PrimIO Int32
 
 export
-getTicks : (HasIO io) => io Int
+getTicks : (HasIO io) => io Int32
 getTicks = primIO prim__getTicks
 
 -- courtesy of stefan-hoeck
@@ -160,20 +248,20 @@ nsFrom :  Generic t code
        -> NS I ts
 nsFrom v = nsFromSOP $ from v
 
-transformReturnCode : PrimIO (Union2 ScreepsError ScreepsOK) -> JSIO (Maybe $ Either ScreepsError ScreepsOK)
+transformReturnCode : PrimIO (Union2 PrimScreepsError PrimScreepsOK) -> JSIO (Maybe $ Either ScreepsError ScreepsOK)
 transformReturnCode ret = do
   result <- primJS ret
-  pure (map nsTo (fromUnion2 result))
+  pure (map nsTo (fromFFI result))
 
 %foreign "javascript:lambda:(u, creep, target) => creep.moveTo(target)"
-prim__moveTo : forall a . Creep -> a -> PrimIO (Union2 ScreepsError ScreepsOK)
+prim__moveTo : forall a . Creep -> a -> PrimIO (Union2 PrimScreepsError PrimScreepsOK)
 
 export
 moveTo : (HasPosition o) => Creep -> o -> JSIO (Either ScreepsError ScreepsOK)
 moveTo creep target = unMaybe "moveTo" $ transformReturnCode $ prim__moveTo creep target
 
 %foreign "javascript:lambda:(u, creep, target) => creep.attack(target)"
-prim__attack : forall a . Creep -> a -> PrimIO (Union2 ScreepsError ScreepsOK)
+prim__attack : forall a . Creep -> a -> PrimIO (Union2 PrimScreepsError PrimScreepsOK)
 
 export
 interface Attackable a where
@@ -185,3 +273,82 @@ export
 attack : (Attackable o) => Creep -> o -> JSIO (Either ScreepsError ScreepsOK)
 attack creep target = unMaybe "attack" $ transformReturnCode $ prim__attack creep target
 
+data PrimBodypart : Type where [external]
+
+%foreign "javascript:lambda:() => MOVE"
+prim__bodypartMove : PrimBodypart
+
+%foreign "javascript:lambda:() => WORK"
+prim__bodypartWork : PrimBodypart
+
+%foreign "javascript:lambda:() => CARRY"
+prim__bodypartCarry : PrimBodypart
+
+%foreign "javascript:lambda:() => ATTACK"
+prim__bodypartAttack : PrimBodypart
+
+%foreign "javascript:lambda:() => RANGED_ATTACK"
+prim__bodypartRangedAttack : PrimBodypart
+
+%foreign "javascript:lambda:() => HEAL"
+prim__bodypartHeal : PrimBodypart
+
+%foreign "javascript:lambda:() => TOUGH"
+prim__bodypartTough : PrimBodypart
+
+public export
+data Bodypart = Move | Work | Carry | Attack | RangedAttack | Heal | Tough
+
+%runElab derive "Bodypart" [Generic, Meta, Eq, Ord, Show]
+
+screepsBodyparts : List (Bodypart, PrimBodypart)
+screepsBodyparts = [
+  (Move, prim__bodypartMove),
+  (Work, prim__bodypartWork),
+  (Carry, prim__bodypartCarry),
+  (Attack, prim__bodypartAttack),
+  (RangedAttack, prim__bodypartRangedAttack),
+  (Heal, prim__bodypartHeal),
+  (Tough, prim__bodypartTough)
+  ]
+
+SafeCast PrimBodypart where
+  safeCast v = choiceMap (checkBy eqv v) (map snd screepsBodyparts)
+
+ToJSON PrimBodypart where
+  toJSON = Str . believe_me
+
+FromJSON PrimBodypart where
+  fromJSON = withString "PrimBodypart" (\n => case safeCast n of
+    Just v => pure v
+    Nothing => fail #"cannot cast \#{jsShow n} to PrimBodypart"#)
+
+FromFFI Bodypart PrimBodypart where
+  fromFFI v = choiceMap check screepsBodyparts where
+    check : (err : (Bodypart, PrimBodypart)) -> Maybe Bodypart
+    check (e, pe) = if eqv v pe then Just e else Nothing
+
+ToFFI Bodypart PrimBodypart where
+  toFFI Move = prim__bodypartMove
+  toFFI Work = prim__bodypartWork
+  toFFI Carry = prim__bodypartCarry
+  toFFI Attack = prim__bodypartAttack
+  toFFI RangedAttack = prim__bodypartRangedAttack
+  toFFI Heal = prim__bodypartHeal
+  toFFI Tough = prim__bodypartTough
+
+export
+FromJSON Bodypart where
+  fromJSON = fromJSONwithFromFFI
+
+export
+ToJSON Bodypart where
+  toJSON = toJSONwithToFFI
+
+public export 
+record BodypartMounted where
+  constructor MkBodypartMounted
+  type : String
+  hits : Int32
+
+%runElab derive "BodypartMounted" [Generic, Meta, Eq, Ord, Show, FromJSON1, ToJSON1]

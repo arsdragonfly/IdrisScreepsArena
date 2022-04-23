@@ -53,4 +53,3 @@ firstAttack = do
 
 main : IO ()
 main = runJS firstAttack
-
