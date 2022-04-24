@@ -14,9 +14,23 @@ filterM p = foldr (\x, acc => [|(\flg, l => ifThenElse flg (x :: l) l) (p x) acc
 checkBy : (a -> b -> Bool) -> a -> b -> Maybe b
 checkBy eq a target = if eq a target then Just target else Nothing
 
-export data Creep : Type where [external]
+export
+data Creep : Type where [external]
 
-export data Flag : Type where [external]
+export
+ToFFI Creep Creep where toFFI = id
+
+export
+FromFFI Creep Creep where fromFFI = Just
+
+export
+data Flag : Type where [external]
+
+export
+ToFFI Flag Flag where toFFI = id
+
+export
+FromFFI Flag Flag where fromFFI = Just
 
 toJSONwithToFFI : {auto tf : ToFFI a b} -> {auto tj : ToJSON b} -> (a -> Value)
 toJSONwithToFFI = toJSON@{tj} . toFFI@{tf}
@@ -28,13 +42,13 @@ fromJSONwithFromFFI = \val => do
       | Nothing => fail #"fromFFI failed for \#{jsShow bb}"#
     pure aa
 
-export
-(ToFFI a b, ToJSON b) => ToJSON a where
-  toJSON = toJSONwithToFFI
+-- export
+-- (ToFFI a b, ToJSON b) => ToJSON a where
+--   toJSON = toJSONwithToFFI
 
-export
-(FromFFI a b, FromJSON b) => FromJSON a where
-  fromJSON = fromJSONwithFromFFI
+-- export
+-- (FromFFI a b, FromJSON b) => FromJSON a where
+--   fromJSON = fromJSONwithFromFFI
 
 data PrimScreepsOK : Type where [external]
 
@@ -177,16 +191,25 @@ prim__y : forall a . a -> PrimIO (UndefOr Int32)
 
 export
 interface HasPosition a where
+  constructor MkHasPosition
   posX : (HasIO io) => a -> io (Maybe Int32)
-  posX v = map undeforToMaybe (primIO (prim__x v))
   posY : (HasIO io) => a -> io (Maybe Int32)
-  posY v = map undeforToMaybe (primIO (prim__y v))
+
+posXWithToFFI : (ToFFI a b, HasIO io) => a -> io (Maybe Int32)
+posXWithToFFI v = map undeforToMaybe (primIO $ prim__x $ toFFI v)
+
+posYWithToFFI : (ToFFI a b, HasIO io) => a -> io (Maybe Int32)
+posYWithToFFI v = map undeforToMaybe (primIO $ prim__y $ toFFI v)
 
 export
-HasPosition Creep where
+%hint
+hasPositionIfToFFICreep : ToFFI a Creep -> HasPosition a
+hasPositionIfToFFICreep _ = MkHasPosition posXWithToFFI posYWithToFFI
 
 export
-HasPosition Flag where
+%hint
+hasPositionIfToFFIFlag : ToFFI a Flag -> HasPosition a
+hasPositionIfToFFIFlag _ = MkHasPosition posXWithToFFI posYWithToFFI
 
 %foreign "javascript:lambda:(u, x) => x.my"
 prim__my : forall a . a -> PrimIO Boolean
@@ -257,21 +280,28 @@ transformReturnCode ret = do
 prim__moveTo : forall a . Creep -> a -> PrimIO (Union2 PrimScreepsError PrimScreepsOK)
 
 export
-moveTo : (HasPosition o) => Creep -> o -> JSIO (Either ScreepsError ScreepsOK)
-moveTo creep target = unMaybe "moveTo" $ transformReturnCode $ prim__moveTo creep target
+moveTo : (ToFFI c Creep, HasPosition o) => c -> o -> JSIO (Either ScreepsError ())
+moveTo creep target = (map ignore) $ unMaybe "moveTo" $ transformReturnCode $ prim__moveTo (toFFI creep) target
 
 %foreign "javascript:lambda:(u, creep, target) => creep.attack(target)"
 prim__attack : forall a . Creep -> a -> PrimIO (Union2 PrimScreepsError PrimScreepsOK)
 
+%foreign "javascript:lambda:(u, creep, target) => creep.rangedAttack(target)"
+prim__rangedAttack : forall a . Creep -> a -> PrimIO (Union2 PrimScreepsError PrimScreepsOK)
+
 export
-interface Attackable a where
+interface HasPosition a => Attackable a where
 
 export
 Attackable Creep where
 
 export
-attack : (Attackable o) => Creep -> o -> JSIO (Either ScreepsError ScreepsOK)
-attack creep target = unMaybe "attack" $ transformReturnCode $ prim__attack creep target
+attack : (Attackable o) => Creep -> o -> JSIO (Either ScreepsError ())
+attack creep target = (map ignore) $ unMaybe "attack" $ transformReturnCode $ prim__attack creep target
+
+export
+rangedAttack : (Attackable o) => Creep -> o -> JSIO (Either ScreepsError ())
+rangedAttack creep target = (map ignore) $ unMaybe "rangedAttack" $ transformReturnCode $ prim__rangedAttack creep target
 
 data PrimBodypart : Type where [external]
 
@@ -348,7 +378,23 @@ ToJSON Bodypart where
 public export 
 record BodypartMounted where
   constructor MkBodypartMounted
-  type : String
+  type : Bodypart
   hits : Int32
 
 %runElab derive "BodypartMounted" [Generic, Meta, Eq, Ord, Show, FromJSON1, ToJSON1]
+
+%foreign "javascript:lambda:(creep) => creep.body"
+prim__body : Creep -> PrimIO (IArray IObject)
+
+export
+body : Creep -> JSIO (List BodypartMounted)
+body creep = do
+  value <- val
+  case fromJSON value of
+    Right result => pure result
+    Left jsonErr => throwError $ Caught #"JSON decode failed for List BodypartMounted: \#{jsShow jsonErr}"#
+    where
+      val : JSIO Value
+      val = do
+        objs <- primJS $ prim__body creep
+        pure $ Arr $ map Obj objs
