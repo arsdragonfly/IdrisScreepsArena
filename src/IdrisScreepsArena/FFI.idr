@@ -41,16 +41,11 @@ export
 data Creep : Type where [external]
 
 export
-%hint
-creepIsItself : Equal Creep Creep
-creepIsItself = Refl
-
-export
 ToFFI Creep Creep where toFFI = id
 
 public export
 %hint
-toFFIExistsCreep : {auto prf: ToFFI Creep Creep} -> ToFFIExists Creep
+toFFIExistsCreep : {auto prf: ToFFI a Creep} -> ToFFIExists a
 toFFIExistsCreep = MkToFFIExists Creep prf
 
 export
@@ -64,7 +59,7 @@ ToFFI Flag Flag where toFFI = id
 
 public export
 %hint
-toFFIExistsFlag : {auto prf: ToFFI Flag Flag} -> ToFFIExists Flag
+toFFIExistsFlag : {auto prf: ToFFI a Flag} -> ToFFIExists a
 toFFIExistsFlag = MkToFFIExists Flag prf
 
 export
@@ -352,7 +347,7 @@ action2 actionName primAction aa bb = let
 prim__moveTo : PrimAction2
 
 export
-moveTo : (ToFFISatisfiesConstraint (Equal Creep) c) => (HasPosition o) => c -> o -> JSIO (Either ScreepsError ())
+moveTo : (ToFFI c Creep) => (HasPosition o) => c -> o -> JSIO (Either ScreepsError ())
 moveTo = action2 "moveTo" prim__moveTo
 
 %foreign "javascript:lambda:(c, t, creep, target) => creep.attack(target)"
@@ -361,11 +356,14 @@ prim__attack : PrimAction2
 %foreign "javascript:lambda:(c, t, creep, target) => creep.rangedAttack(target)"
 prim__rangedAttack : PrimAction2
 
--- export
--- interface PrimHasPosition a => PrimAttackable a where
+%foreign "javascript:lambda:(u, x) => x.hits"
+prim__hits : forall a . a -> PrimIO Int32
 
--- export
--- PrimAttackable Creep where
+%foreign "javascript:lambda:(u, x) => x.hitsMax"
+prim__hitsMax : forall a . a -> PrimIO Int32
+
+%foreign "javascript:lambda:(u, x) => x.hits < x.hitsMax"
+prim__wounded : forall a . a -> PrimIO Boolean
 
 public export
 data PrimAttackable : Type -> Type where
@@ -375,20 +373,34 @@ export
 %hint
 primAttackableToPrimGameObject : PrimAttackable a -> PrimGameObject a
 primAttackableToPrimGameObject PrimAttackableCreep = PrimGameObjectCreep
+-- TODO: structures are also attackable
 
 export
 interface (ToFFISatisfiesConstraint PrimAttackable a) => Attackable a where
+  hits : (HasIO io) => a -> io Int32
+  hits v = primIO $ prim__hits $ toFFI@{toFFIImplementation} v
+  hitsMax : (HasIO io) => a -> io Int32
+  hitsMax v = primIO $ prim__hitsMax $ toFFI@{toFFIImplementation} v
+  wounded : a -> JSIO Bool
+  wounded v = tryJS "wounded" $ prim__wounded $ toFFI@{toFFIImplementation} v
 
 export
 ToFFISatisfiesConstraint PrimAttackable a => Attackable a where
 
 export
-attack : (ToFFISatisfiesConstraint (Equal Creep) c) => (Attackable o) => c -> o -> JSIO (Either ScreepsError ())
+attack : (ToFFI c Creep) => (Attackable o) => c -> o -> JSIO (Either ScreepsError ())
 attack = action2 "attack" prim__attack
 
 export
-rangedAttack : (ToFFISatisfiesConstraint (Equal Creep) c) => (Attackable o) => c -> o -> JSIO (Either ScreepsError ())
+rangedAttack : (ToFFI c Creep) => (Attackable o) => c -> o -> JSIO (Either ScreepsError ())
 rangedAttack = action2 "rangedAttack" prim__rangedAttack
+
+%foreign "javascript:lambda:(c, t, creep, target) => creep.heal(target)"
+prim__heal : PrimAction2
+
+export
+heal : (ToFFI c Creep) => (ToFFI o Creep) => c -> o -> JSIO (Either ScreepsError ())
+heal = action2 "heal" prim__heal
 
 data PrimBodypart : Type where [external]
 
@@ -474,7 +486,7 @@ record BodypartMounted where
 prim__body : forall a . a -> PrimIO (IArray IObject)
 
 export
-body : (prec: ToFFISatisfiesConstraint (Equal Creep) c) => c -> JSIO (List BodypartMounted)
+body : (ToFFI c Creep) => c -> JSIO (List BodypartMounted)
 body creep = do
   value <- val
   case fromJSON value of
@@ -483,5 +495,5 @@ body creep = do
     where
       val : JSIO Value
       val = do
-        objs <- primJS $ prim__body (toFFI@{toFFIImplementation} creep)
+        objs <- primJS $ prim__body (toFFI creep)
         pure $ Arr $ map Obj objs

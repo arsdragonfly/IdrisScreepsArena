@@ -54,15 +54,17 @@ tutorial3 = do
       consoleLog "approaching..."
   consoleLog "attacking..."
 
-data CreepAction = RangedAttackAction | AttackAction
+data CreepAction = RangedAttackAction | AttackAction | HealAction
 
 getBodypart : CreepAction -> Bodypart
 getBodypart RangedAttackAction = RangedAttack
 getBodypart AttackAction = Attack
+getBodypart HealAction = Heal
 
 GetConstraint : CreepAction -> (Type -> Type)
 GetConstraint RangedAttackAction = Attackable
 GetConstraint AttackAction = Attackable
+GetConstraint HealAction = (\t => ToFFI t Creep)
 
 0 ConcreteActionType : CreepAction -> Type
 ConcreteActionType ca = (forall o . (GetConstraint ca) o => Creep -> o -> JSIO (Either ScreepsError ()))
@@ -71,6 +73,7 @@ ConcreteActionType ca = (forall o . (GetConstraint ca) o => Creep -> o -> JSIO (
 concreteAction : (ca : CreepAction) -> ConcreteActionType ca
 concreteAction RangedAttackAction = rangedAttack
 concreteAction AttackAction = attack
+concreteAction HealAction = heal
 
 concreteActionWhenApplicable : (ca : CreepAction) -> ConcreteActionType ca
 concreteActionWhenApplicable ca = (\creep, target => do
@@ -91,8 +94,15 @@ moveToAssault target creep = do
     Right _ => pure ()
     Left _ => ignore (moveTo creep target)
 
+moveToHeal : (ToFFI o Creep) => o -> Creep -> JSIO ()
+moveToHeal target creep = do
+  bodyparts <- body creep
+  healResult <- concreteActionWhenApplicable HealAction creep target
+  case (the (Either _ _) (healResult)) of
+    Right _ => pure ()
+    Left _ => ignore (moveTo creep target)
+
 -- creeps bodies
--- TODO: healing
 tutorial4 : JSIO ()
 tutorial4 = do
   creeps <- getObjectsByPrototypeCreep
@@ -101,6 +111,10 @@ tutorial4 = do
   myCreeps <- filterM my creeps
   ignore $ traverse (moveToAssault enemy) myCreeps
   consoleLog "attacking..."
+  Just myWounded <- map head' $ filterM wounded myCreeps
+    | Nothing => consoleLog "no need to heal."
+  ignore $ traverse (moveToHeal myWounded) myCreeps
+  consoleLog "healing..."
 
 main : IO ()
 main = runJS tutorial4
