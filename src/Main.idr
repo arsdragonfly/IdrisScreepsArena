@@ -54,12 +54,6 @@ tutorial3 = do
       consoleLog "approaching..."
   consoleLog "attacking..."
 
-interface Unconstrained a where
-  trivial : ()
-  trivial = ()
-
-Unconstrained a where
-
 data CreepAction = RangedAttackAction | AttackAction
 
 getBodypart : CreepAction -> Bodypart
