@@ -369,12 +369,6 @@ export
 moveTo : (ToFFI c Creep) => (HasPosition o) => c -> o -> JSIO (Either ScreepsError ())
 moveTo = action2 "moveTo" prim__moveTo
 
-%foreign "javascript:lambda:(c, t, creep, target) => creep.attack(target)"
-prim__attack : PrimAction2
-
-%foreign "javascript:lambda:(c, t, creep, target) => creep.rangedAttack(target)"
-prim__rangedAttack : PrimAction2
-
 %foreign "javascript:lambda:(u, x) => x.hits"
 prim__hits : forall a . a -> PrimIO Int32
 
@@ -387,12 +381,14 @@ prim__wounded : forall a . a -> PrimIO Boolean
 public export
 data PrimAttackable : Type -> Type where
   PrimAttackableCreep : PrimAttackable Creep
+  PrimAttackableTower : PrimAttackable Tower
+-- TODO: other structures are also attackable
 
 export
 %hint
 primAttackableToPrimGameObject : PrimAttackable a -> PrimGameObject a
 primAttackableToPrimGameObject PrimAttackableCreep = PrimGameObjectCreep
--- TODO: structures are also attackable
+primAttackableToPrimGameObject PrimAttackableTower = PrimGameObjectTower
 
 export
 interface (ToFFISatisfiesConstraint PrimAttackable a) => Attackable a where
@@ -406,20 +402,82 @@ interface (ToFFISatisfiesConstraint PrimAttackable a) => Attackable a where
 export
 ToFFISatisfiesConstraint PrimAttackable a => Attackable a where
 
-export
-attack : (ToFFI c Creep) => (Attackable o) => c -> o -> JSIO (Either ScreepsError ())
-attack = action2 "attack" prim__attack
+%foreign "javascript:lambda:(u, v, a, target) => a.attack(target)"
+prim__attack : PrimAction2
+
+%foreign "javascript:lambda:(u, v, a, target) => a.rangedAttack(target)"
+prim__rangedAttack : PrimAction2
+
+%foreign "javascript:lambda:(u, v, a, target) => a.rangedMassAttack(target)"
+prim__rangedMassAttack : PrimAction2
+
+public export
+data PrimAttacker : Type -> Type where
+  PrimAttackerCreep : PrimAttacker Creep
+  PrimAttackerTower : PrimAttacker Tower
+
+primAttackerIsEitherCreepOrTower : (val: PrimAttacker a) -> Either (Equal val PrimAttackerCreep) (Equal val PrimAttackerTower)
+primAttackerIsEitherCreepOrTower v = case v of
+  PrimAttackerCreep => Left Refl
+  PrimAttackerTower => Right Refl
+
+-- convenience overloads so that tower's rangedAttack and rangedMassAttack are all attack under the hood
+rangedAttackOverloaded : (ToFFISatisfiesConstraint PrimAttacker a) => (Attackable o) => a -> o -> JSIO (Either ScreepsError ())
+rangedAttackOverloaded = case primAttackerIsEitherCreepOrTower (toFFITargetConstraintEvidence {a=a}) of
+  Left _ => action2 "rangedAttack" prim__rangedAttack
+  Right _ => action2 "attack" prim__attack
+
+rangedMassAttackOverloaded : (ToFFISatisfiesConstraint PrimAttacker a) => (Attackable o) => a -> o -> JSIO (Either ScreepsError ())
+rangedMassAttackOverloaded = case primAttackerIsEitherCreepOrTower (toFFITargetConstraintEvidence {a=a}) of
+  Left _ => action2 "rangedMassAttack" prim__rangedMassAttack
+  Right _ => action2 "attack" prim__attack
 
 export
-rangedAttack : (ToFFI c Creep) => (Attackable o) => c -> o -> JSIO (Either ScreepsError ())
-rangedAttack = action2 "rangedAttack" prim__rangedAttack
+interface (ToFFISatisfiesConstraint PrimAttacker a) => Attacker a where
+  attack : (Attackable o) => a -> o -> JSIO (Either ScreepsError ())
+  attack = action2 "attack" prim__attack
 
-%foreign "javascript:lambda:(c, t, creep, target) => creep.heal(target)"
+  rangedAttack : (Attackable o) => a -> o -> JSIO (Either ScreepsError ())
+  rangedAttack = rangedAttackOverloaded
+
+  rangedMassAttack : (Attackable o) => a -> o -> JSIO (Either ScreepsError ())
+  rangedMassAttack = rangedMassAttackOverloaded
+    
+export
+ToFFISatisfiesConstraint PrimAttacker a => Attacker a where
+
+%foreign "javascript:lambda:(u, v, a, target) => a.heal(target)"
 prim__heal : PrimAction2
 
+%foreign "javascript:lambda:(u, v, a, target) => a.rangedHeal(target)"
+prim__rangedHeal : PrimAction2
+
+public export
+data PrimHealer : Type -> Type where
+  PrimHealerCreep : PrimHealer Creep
+  PrimHealerTower : PrimHealer Tower
+
+primHealerIsEitherCreepOrTower : (val: PrimHealer a) -> Either (Equal val PrimHealerCreep) (Equal val PrimHealerTower)
+primHealerIsEitherCreepOrTower v = case v of
+  PrimHealerCreep => Left Refl
+  PrimHealerTower => Right Refl
+
+-- convenience overload so that tower's rangedHeal is heal under the hood
+rangedHealOverloaded : (ToFFISatisfiesConstraint PrimHealer a) => (ToFFI o Creep) => a -> o -> JSIO (Either ScreepsError ())
+rangedHealOverloaded = case primHealerIsEitherCreepOrTower (toFFITargetConstraintEvidence {a=a}) of
+  Left _ => action2 "rangedHeal" prim__rangedHeal
+  Right _ => action2 "heal" prim__heal
+
 export
-heal : (ToFFI c Creep) => (ToFFI o Creep) => c -> o -> JSIO (Either ScreepsError ())
-heal = action2 "heal" prim__heal
+interface (ToFFISatisfiesConstraint PrimHealer a) => Healer a where
+  heal : (ToFFI o Creep) => a -> o -> JSIO (Either ScreepsError ())
+  heal = action2 "heal" prim__heal
+
+  rangedHeal : (ToFFI o Creep) => a -> o -> JSIO (Either ScreepsError ())
+  rangedHeal = rangedHealOverloaded
+
+export
+ToFFISatisfiesConstraint PrimHealer a => Healer a where
 
 data PrimBodypart : Type where [external]
 
