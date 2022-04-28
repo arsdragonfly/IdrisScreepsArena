@@ -8,24 +8,6 @@ import Generics.Derive
 %default total
 %language ElabReflection
 
-toJSONwithToFFI : {auto tf : ToFFI a b} -> {auto tj : ToJSON b} -> (a -> Value)
-toJSONwithToFFI = toJSON@{tj} . toFFI@{tf}
-
-fromJSONwithFromFFI : {auto ff : FromFFI a b} -> {auto fj : FromJSON b} -> Parser a
-fromJSONwithFromFFI = \val => do
-    bb <- fromJSON@{fj} val
-    Just aa <- pure (fromFFI@{ff} bb)
-      | Nothing => fail #"fromFFI failed for \#{jsShow bb}"#
-    pure aa
-
-export
-(ToFFI a b, ToJSON b) => ToJSON a where
-  toJSON = toJSONwithToFFI
-
-export
-(FromFFI a b, FromJSON b) => FromJSON a where
-  fromJSON = fromJSONwithFromFFI
-
 public export
 interface ToFFIExists a where
   constructor MkToFFIExists
@@ -83,6 +65,26 @@ toFFIExistsFlag = MkToFFIExists Flag prf
 export
 FromFFI Flag Flag where fromFFI = Just
 
+toJSONwithToFFI : {auto tf : ToFFI a b} -> {auto tj : ToJSON b} -> (a -> Value)
+toJSONwithToFFI = toJSON@{tj} . toFFI@{tf}
+
+fromJSONwithFromFFI : {auto ff : FromFFI a b} -> {auto fj : FromJSON b} -> Parser a
+fromJSONwithFromFFI = \val => do
+    bb <- fromJSON@{fj} val
+    Just aa <- pure (fromFFI@{ff} bb)
+      | Nothing => fail #"fromFFI failed for \#{jsShow bb}"#
+    pure aa
+
+-- TODO: this isn't working; change this to %hint with MkToJSON and MkFromJSON
+
+-- export
+-- (ToFFI a b, ToJSON b) => ToJSON a where
+--   toJSON = toJSONwithToFFI
+
+-- export
+-- (FromFFI a b, FromJSON b) => FromJSON a where
+--   fromJSON = fromJSONwithFromFFI
+
 data PrimScreepsOK : Type where [external]
 
 %foreign "javascript:lambda:() => OK"
@@ -107,6 +109,14 @@ data ScreepsOK = OK
 FromFFI ScreepsOK PrimScreepsOK where fromFFI _ = Just OK
 
 ToFFI ScreepsOK PrimScreepsOK where toFFI _ = prim__ok
+
+export
+FromJSON ScreepsOK where
+  fromJSON = fromJSONwithFromFFI
+
+export
+ToJSON ScreepsOK where
+  toJSON = toJSONwithToFFI
 
 data PrimScreepsError : Type where [external]
 
@@ -198,6 +208,15 @@ ToFFI ScreepsError PrimScreepsError where
   toFFI ErrInvalidArgs = prim__errInvalidArgs
   toFFI ErrTired = prim__errTired
   toFFI ErrNoBodypart = prim__errNoBodypart
+
+export
+FromJSON ScreepsError where
+  fromJSON = fromJSONwithFromFFI
+
+export
+ToJSON ScreepsError where
+  toJSON = toJSONwithToFFI
+
 
 -- TODO: complete this
 public export
@@ -446,6 +465,14 @@ ToFFI Bodypart PrimBodypart where
   toFFI RangedAttack = prim__bodypartRangedAttack
   toFFI Heal = prim__bodypartHeal
   toFFI Tough = prim__bodypartTough
+
+export
+FromJSON Bodypart where
+  fromJSON = fromJSONwithFromFFI
+
+export
+ToJSON Bodypart where
+  toJSON = toJSONwithToFFI
 
 public export 
 record BodypartMounted where

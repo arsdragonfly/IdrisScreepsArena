@@ -20,35 +20,49 @@ TJSON B where
 TFFI A B where
   tFFI AA = BB
 
-(TFFI a b, TJSON b) => TJSON a where
-  tJSON = tJSON . tFFI
+interface TFFIExists a where
+  constructor MkTFFIExists
+  TFFITarget : Type
+  tFFIImplementation : TFFI a TFFITarget
 
-test : ()
-test = tJSON AA
+%hint
+tFFIExistsA : {auto prf: TFFI A B} -> TFFIExists A
+tFFIExistsA = MkTFFIExists B prf
 
--- interface TFFIExists a where
---   constructor MkTFFIExists
---   TFFITarget : Type
---   tFFIImplementation : TFFI a TFFITarget
+interface (TFFIExists a) => TFFISatisfiesConstraint (0 c: Type -> Type) a where
+  constructor MkTFFISatisfiesConstraint
+  toFFITargetConstraintEvidence : c (TFFITarget {a})
+
+%hint
+withTFFIConstraint : (impl: TFFIExists a) -> c (TFFITarget@{impl}) -> TFFISatisfiesConstraint c a
+withTFFIConstraint impl cb = MkTFFISatisfiesConstraint cb
+
+-- export
+-- exists : {k : Type} -> (k -> Type) -> Type
+-- exists t = (b : Type) -> ({a : _} -> t a -> b) -> b
+
+-- export
+-- packExists : {k : Type} -> {t : k -> Type} -> {a : k} -> t a -> exists t
+-- packExists x = \b, f => f x
+
+-- export
+-- unpackExists : {k : Type} -> {t : k -> Type} -> exists t -> {b : Type} -> ({a : k} -> t a -> b) -> b
+-- unpackExists exT {b = b'} f = exT b' f
+
+-- 0 TFFISatisfiesConstraint : (Type -> Type) -> Type -> Type
+-- TFFISatisfiesConstraint constraint a = (b : Type ** ((TFFI a b), constraint b))
 
 -- %hint
--- tFFIExistsA : {auto prf: TFFI A B} -> TFFIExists A
--- tFFIExistsA = MkTFFIExists B prf
+-- withFFI : TFFI a b -> TJSON b -> TJSON a
+-- withFFI _ _ = MkTJSON (tJSON . tFFI)
 
--- interface (TFFIExists a) => TFFISatisfiesConstraint (0 c: Type -> Type) a where
---   constructor MkTFFISatisfiesConstraint
---   toFFITargetConstraintEvidence : c (TFFITarget {a})
 
--- %hint
--- withTFFIConstraint : (impl: TFFIExists a) -> c (TFFITarget@{impl}) -> TFFISatisfiesConstraint c a
--- withTFFIConstraint impl cb = MkTFFISatisfiesConstraint cb
+interface (TFFISatisfiesConstraint TJSON a) => Success a where
+  constructor MkSuccess
+  success : a -> ()
+  success _ = ()
 
--- interface (TFFISatisfiesConstraint TJSON a) => Success a where
---   constructor MkSuccess
---   success : a -> ()
---   success _ = ()
-
--- TFFISatisfiesConstraint TJSON a => Success a where
+TFFISatisfiesConstraint TJSON a => Success a where
 
 -- test : ()
 -- test = tJSON AA
@@ -59,11 +73,11 @@ test = tJSON AA
 -- suc : (p : TFFISatisfiesConstraint TJSON A) => A -> ()
 -- suc = success
 
--- typ : A -> B
--- typ a = tFFI@{tFFIImplementation} a
+typ : A -> B
+typ a = tFFI@{tFFIImplementation} a
 
--- suc : A -> ()
--- suc = success
+suc : A -> ()
+suc = success
 
--- go : ()
--- go = suc AA
+go : ()
+go = suc AA
