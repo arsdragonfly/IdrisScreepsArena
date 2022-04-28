@@ -14,8 +14,8 @@ tutorial1 = do
 
 simpleMove2: IO ()
 simpleMove2 = do
-  creeps <- getObjectsByPrototypeCreep
-  flags <- getObjectsByPrototypeFlag
+  creeps <- getObjects Creep
+  flags <- getObjects Flag
   let firstCreep : (Maybe Creep) = head' creeps
   let firstFlag : (Maybe Flag) = head' flags
   let result : (Maybe $ IO ()) = (the (Maybe $ IO ()) (?hole <$> firstCreep <*> firstFlag))
@@ -31,9 +31,9 @@ simpleMove2 = do
 -- simple move
 tutorial2 : JSIO ()
 tutorial2 = do
-  Just creep <- map head' getObjectsByPrototypeCreep
+  Just creep <- map head' $ getObjects Creep
     | Nothing => consoleLog "creep not found"
-  Just flag <- map head' getObjectsByPrototypeFlag
+  Just flag <- map head' $ getObjects Flag
     | Nothing => consoleLog "target not found"
   Right _ <- moveTo creep flag
     | Left err => consoleLog $ jsShow err
@@ -42,7 +42,7 @@ tutorial2 = do
 -- first attack
 tutorial3 : JSIO ()
 tutorial3 = do
-  creeps <- getObjectsByPrototypeCreep
+  creeps <- getObjects Creep
   Just creep <- map head' $ filterM my creeps
     | Nothing => consoleLog "creep not found"
   Just enemy <- map head' $ filterM ((map not) . my) creeps
@@ -105,7 +105,7 @@ moveToHeal target creep = do
 -- creeps bodies
 tutorial4 : JSIO ()
 tutorial4 = do
-  creeps <- getObjectsByPrototypeCreep
+  creeps <- getObjects Creep
   Just enemy <- map head' $ filterM ((map not) . my) creeps
     | Nothing => consoleLog "enemy has been eliminated."
   myCreeps <- filterM my creeps

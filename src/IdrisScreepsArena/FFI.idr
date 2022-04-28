@@ -65,6 +65,20 @@ toFFIExistsFlag = MkToFFIExists Flag prf
 export
 FromFFI Flag Flag where fromFFI = Just
 
+export
+data Tower : Type where [external]
+
+export
+ToFFI Tower Tower where toFFI = id
+
+public export
+%hint
+toFFIExistsTower : {auto prf: ToFFI a Tower} -> ToFFIExists a
+toFFIExistsTower = MkToFFIExists Tower prf
+
+export
+FromFFI Tower Tower where fromFFI = Just
+
 toJSONwithToFFI : {auto tf : ToFFI a b} -> {auto tj : ToJSON b} -> (a -> Value)
 toJSONwithToFFI = toJSON@{tj} . toFFI@{tf}
 
@@ -223,6 +237,7 @@ public export
 data PrimGameObject : Type -> Type where
   PrimGameObjectCreep : PrimGameObject Creep
   PrimGameObjectFlag : PrimGameObject Flag
+  PrimGameObjectTower : PrimGameObject Tower
 
 %foreign "javascript:lambda:(u, x) => x.exists"
 prim__exists : forall a. a -> PrimIO Boolean
@@ -283,16 +298,20 @@ export
 %foreign "javascript:lambda: () => getObjectsByPrototype(Creep)"
 prim__getObjectsByPrototypeCreep : PrimIO (IArray Creep)
 
-export
-getObjectsByPrototypeCreep : (HasIO io) => io (List Creep)
-getObjectsByPrototypeCreep = map arrayToList $ primIO prim__getObjectsByPrototypeCreep
-
 %foreign "javascript:lambda: () => getObjectsByPrototype(Flag)"
 prim__getObjectsByPrototypeFlag : PrimIO (IArray Flag)
 
+%foreign "javascript:lambda: () => getObjectsByPrototype(Tower)"
+prim__getObjectsByPrototypeTower : PrimIO (IArray Tower)
+
+getObjectsPrim : PrimGameObject a -> PrimIO (IArray a)
+getObjectsPrim PrimGameObjectCreep = prim__getObjectsByPrototypeCreep
+getObjectsPrim PrimGameObjectFlag = prim__getObjectsByPrototypeFlag
+getObjectsPrim PrimGameObjectTower = prim__getObjectsByPrototypeTower
+
 export
-getObjectsByPrototypeFlag : (HasIO io) => io (List Flag)
-getObjectsByPrototypeFlag = map arrayToList $ primIO prim__getObjectsByPrototypeFlag
+getObjects : (HasIO io) => (a: Type) -> {auto prf : PrimGameObject a} -> io (List a)
+getObjects _ {prf} = map arrayToList $ primIO $ getObjectsPrim prf
 
 %foreign "javascript:lambda: () => getTicks()"
 prim__getTicks : PrimIO Int32
