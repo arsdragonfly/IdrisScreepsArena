@@ -79,6 +79,20 @@ toFFIExistsTower = MkToFFIExists Tower prf
 export
 FromFFI Tower Tower where fromFFI = Just
 
+export
+data Container : Type where [external]
+
+export
+ToFFI Container Container where toFFI = id
+
+public export
+%hint
+toFFIExistsContainer : {auto prf: ToFFI a Container} -> ToFFIExists a
+toFFIExistsContainer = MkToFFIExists Container prf
+
+export
+FromFFI Container Container where fromFFI = Just
+
 toJSONwithToFFI : {auto tf : ToFFI a b} -> {auto tj : ToJSON b} -> (a -> Value)
 toJSONwithToFFI = toJSON@{tj} . toFFI@{tf}
 
@@ -238,13 +252,20 @@ data PrimGameObject : Type -> Type where
   PrimGameObjectCreep : PrimGameObject Creep
   PrimGameObjectFlag : PrimGameObject Flag
   PrimGameObjectTower : PrimGameObject Tower
+  PrimGameObjectContainer : PrimGameObject Container
 
 %foreign "javascript:lambda:(u, x) => x.exists"
 prim__exists : forall a. a -> PrimIO Boolean
 
 export
-gameObjectExists : (PrimGameObject a) => a -> JSIO Bool
-gameObjectExists v = tryJS "gameObjectExists" (prim__exists v)
+interface ToFFISatisfiesConstraint PrimGameObject a => GameObject a where
+
+export
+ToFFISatisfiesConstraint PrimGameObject a => GameObject a where
+
+export
+gameObjectExists : (GameObject a) => a -> JSIO Bool
+gameObjectExists v = tryJS "gameObjectExists" $ prim__exists $ toFFI@{toFFIImplementation} v
 
 -- if 'exists' is false (which happens for cached and newly created objects), x and y will be undefined
 %foreign "javascript:lambda:(u, x) => x.x"
@@ -253,6 +274,7 @@ prim__x : forall a . a -> PrimIO (UndefOr Int32)
 %foreign "javascript:lambda:(u, x) => x.y"
 prim__y : forall a . a -> PrimIO (UndefOr Int32)
 
+-- TODO: support objects with x and y fields
 export
 interface PrimHasPosition a where
   posX' : (HasIO io) => a -> io (Maybe Int32)
@@ -263,37 +285,56 @@ interface PrimHasPosition a where
 export
 PrimGameObject a => PrimHasPosition a where
 
--- TODO: support objects with x and y fields
-
 export
 interface ToFFISatisfiesConstraint PrimHasPosition a => HasPosition a where
-  posX : (HasIO io) => a -> io (Maybe Int32)
-  posY : (HasIO io) => a -> io (Maybe Int32)
 
 export
-(prec : ToFFISatisfiesConstraint PrimHasPosition a) => HasPosition a where
-  posX v = posX'@{toFFITargetConstraintEvidence} $ toFFI@{toFFIImplementation} v
-  posY v = posY'@{toFFITargetConstraintEvidence} $ toFFI@{toFFIImplementation} v
+ToFFISatisfiesConstraint PrimHasPosition a => HasPosition a where
+
+export
+posX : (HasIO io) => (HasPosition a) => a -> io (Maybe Int32)
+posX v = posX'@{toFFITargetConstraintEvidence {a=a}} $ toFFI@{toFFIImplementation} v
+
+export
+posY : (HasIO io) => (HasPosition a) => a -> io (Maybe Int32)
+posY v = posY'@{toFFITargetConstraintEvidence {a=a}} $ toFFI@{toFFIImplementation} v
+
+export
+data PrimStructure : Type -> Type where
+  PrimStructureTower : PrimStructure Tower
+  PrimStructureContainer : PrimStructure Container
+
+export
+%hint
+primStructureToPrimGameObject : PrimStructure a -> PrimGameObject a
+primStructureToPrimGameObject PrimStructureTower = PrimGameObjectTower
+primStructureToPrimGameObject PrimStructureContainer = PrimGameObjectContainer
 
 public export
 data PrimOwned : Type -> Type where
   PrimOwnedCreep : PrimOwned Creep
+  PrimOwnedTower : PrimOwned Tower
+  PrimOwnedContainer : PrimOwned Container
 
 export
 %hint
-primOwnedToPrimGameObject : PrimOwned o -> PrimGameObject o
+primOwnedToPrimGameObject : PrimOwned a -> PrimGameObject a
 primOwnedToPrimGameObject PrimOwnedCreep = PrimGameObjectCreep
+primOwnedToPrimGameObject PrimOwnedTower = PrimGameObjectTower
+primOwnedToPrimGameObject PrimOwnedContainer = PrimGameObjectContainer
 
 %foreign "javascript:lambda:(u, x) => x.my"
 prim__my : forall a . a -> PrimIO Boolean
 
 export
 interface ToFFISatisfiesConstraint PrimOwned a => Owned a where
-  my : a -> JSIO Bool
 
 export
-(prec : ToFFISatisfiesConstraint PrimOwned a) => Owned a where
-  my v = tryJS "my" $ prim__my $ toFFI@{toFFIImplementation} v
+ToFFISatisfiesConstraint PrimOwned a => Owned a where
+
+export
+my : (Owned a) => a -> JSIO Bool
+my v = tryJS "my" $ prim__my $ toFFI@{toFFIImplementation} v
 
 %foreign "javascript:lambda: () => getObjectsByPrototype(Creep)"
 prim__getObjectsByPrototypeCreep : PrimIO (IArray Creep)
@@ -301,13 +342,17 @@ prim__getObjectsByPrototypeCreep : PrimIO (IArray Creep)
 %foreign "javascript:lambda: () => getObjectsByPrototype(Flag)"
 prim__getObjectsByPrototypeFlag : PrimIO (IArray Flag)
 
-%foreign "javascript:lambda: () => getObjectsByPrototype(Tower)"
+%foreign "javascript:lambda: () => getObjectsByPrototype(StructureTower)"
 prim__getObjectsByPrototypeTower : PrimIO (IArray Tower)
+
+%foreign "javascript:lambda: () => getObjectsByPrototype(StructureContainer)"
+prim__getObjectsByPrototypeContainer : PrimIO (IArray Container)
 
 getObjectsPrim : PrimGameObject a -> PrimIO (IArray a)
 getObjectsPrim PrimGameObjectCreep = prim__getObjectsByPrototypeCreep
 getObjectsPrim PrimGameObjectFlag = prim__getObjectsByPrototypeFlag
 getObjectsPrim PrimGameObjectTower = prim__getObjectsByPrototypeTower
+getObjectsPrim PrimGameObjectContainer = prim__getObjectsByPrototypeContainer
 
 export
 getObjects : (HasIO io) => (a: Type) -> {auto prf : PrimGameObject a} -> io (List a)
@@ -362,6 +407,27 @@ action2 actionName primAction aa bb = let
   bbToFFI = toFFI@{toFFIImplementation} bb in
   (map ignore) $ unMaybe actionName $ transformReturnCode $ primAction aaToFFI bbToFFI
 
+0 PrimAction3 : Type
+PrimAction3 = forall a, b, c . a -> b -> c -> PrimIO (Union2 PrimScreepsError PrimScreepsOK)
+
+action3 : (ToFFIExists a) => (ToFFIExists b) => (ToFFIExists c) => String -> PrimAction3 -> a -> b -> c -> JSIO (Either ScreepsError ())
+action3 actionName primAction aa bb cc = let
+  aaToFFI = toFFI@{toFFIImplementation} aa
+  bbToFFI = toFFI@{toFFIImplementation} bb
+  ccToFFI = toFFI@{toFFIImplementation} cc in
+  (map ignore) $ unMaybe actionName $ transformReturnCode $ primAction aaToFFI bbToFFI ccToFFI
+
+0 PrimAction4 : Type
+PrimAction4 = forall a, b, c, d . a -> b -> c -> d -> PrimIO (Union2 PrimScreepsError PrimScreepsOK)
+
+action4 : (ToFFIExists a) => (ToFFIExists b) => (ToFFIExists c) => (ToFFIExists d) => String -> PrimAction4 -> a -> b -> c -> d -> JSIO (Either ScreepsError ())
+action4 actionName primAction aa bb cc dd = let
+  aaToFFI = toFFI@{toFFIImplementation} aa
+  bbToFFI = toFFI@{toFFIImplementation} bb
+  ccToFFI = toFFI@{toFFIImplementation} cc
+  ddToFFI = toFFI@{toFFIImplementation} dd in
+  (map ignore) $ unMaybe actionName $ transformReturnCode $ primAction aaToFFI bbToFFI ccToFFI ddToFFI
+
 %foreign "javascript:lambda:(c, t, creep, target) => creep.moveTo(target)"
 prim__moveTo : PrimAction2
 
@@ -382,25 +448,38 @@ public export
 data PrimAttackable : Type -> Type where
   PrimAttackableCreep : PrimAttackable Creep
   PrimAttackableTower : PrimAttackable Tower
--- TODO: other structures are also attackable
+  PrimAttackableContainer : PrimAttackable Container
 
 export
 %hint
 primAttackableToPrimGameObject : PrimAttackable a -> PrimGameObject a
 primAttackableToPrimGameObject PrimAttackableCreep = PrimGameObjectCreep
 primAttackableToPrimGameObject PrimAttackableTower = PrimGameObjectTower
+primAttackableToPrimGameObject PrimAttackableContainer = PrimGameObjectContainer
 
 export
-interface (ToFFISatisfiesConstraint PrimAttackable a) => Attackable a where
-  hits : (HasIO io) => a -> io Int32
-  hits v = primIO $ prim__hits $ toFFI@{toFFIImplementation} v
-  hitsMax : (HasIO io) => a -> io Int32
-  hitsMax v = primIO $ prim__hitsMax $ toFFI@{toFFIImplementation} v
-  wounded : a -> JSIO Bool
-  wounded v = tryJS "wounded" $ prim__wounded $ toFFI@{toFFIImplementation} v
+%hint
+primStructureToPrimAttackable : PrimStructure a -> PrimAttackable a
+primStructureToPrimAttackable PrimStructureTower = PrimAttackableTower
+primStructureToPrimAttackable PrimStructureContainer = PrimAttackableContainer
+
+export
+interface ToFFISatisfiesConstraint PrimAttackable a => Attackable a where
 
 export
 ToFFISatisfiesConstraint PrimAttackable a => Attackable a where
+
+export
+hits : (HasIO io) => (Attackable a) => a -> io Int32
+hits v = primIO $ prim__hits $ toFFI@{toFFIImplementation} v
+
+export
+hitsMax : (HasIO io) => (Attackable a) => a -> io Int32
+hitsMax v = primIO $ prim__hitsMax $ toFFI@{toFFIImplementation} v
+
+export
+wounded : (Attackable a) => a -> JSIO Bool
+wounded v = tryJS "wounded" $ prim__wounded $ toFFI@{toFFIImplementation} v
 
 %foreign "javascript:lambda:(u, v, a, target) => a.attack(target)"
 prim__attack : PrimAction2
@@ -416,36 +495,42 @@ data PrimAttacker : Type -> Type where
   PrimAttackerCreep : PrimAttacker Creep
   PrimAttackerTower : PrimAttacker Tower
 
+export
+%hint
+primAttackerToPrimGameObject : PrimAttacker a -> PrimGameObject a
+primAttackerToPrimGameObject PrimAttackerCreep = PrimGameObjectCreep
+primAttackerToPrimGameObject PrimAttackerTower = PrimGameObjectTower
+
+export
+interface ToFFISatisfiesConstraint PrimAttacker a => Attacker a where
+
+export
+ToFFISatisfiesConstraint PrimAttacker a => Attacker a where
+
+export
+attack : (Attacker a) => (Attackable o) => a -> o -> JSIO (Either ScreepsError ())
+attack = action2 "attack" prim__attack
+
+export
+%hint
 primAttackerIsEitherCreepOrTower : (val: PrimAttacker a) -> Either (Equal val PrimAttackerCreep) (Equal val PrimAttackerTower)
 primAttackerIsEitherCreepOrTower v = case v of
   PrimAttackerCreep => Left Refl
   PrimAttackerTower => Right Refl
 
 -- convenience overloads so that tower's rangedAttack and rangedMassAttack are all attack under the hood
-rangedAttackOverloaded : (ToFFISatisfiesConstraint PrimAttacker a) => (Attackable o) => a -> o -> JSIO (Either ScreepsError ())
-rangedAttackOverloaded = case primAttackerIsEitherCreepOrTower (toFFITargetConstraintEvidence {a=a}) of
+export
+rangedAttack : (Attacker a) => (Attackable o) => a -> o -> JSIO (Either ScreepsError ())
+rangedAttack = case primAttackerIsEitherCreepOrTower (toFFITargetConstraintEvidence {a=a}) of
   Left _ => action2 "rangedAttack" prim__rangedAttack
   Right _ => action2 "attack" prim__attack
 
-rangedMassAttackOverloaded : (ToFFISatisfiesConstraint PrimAttacker a) => (Attackable o) => a -> o -> JSIO (Either ScreepsError ())
-rangedMassAttackOverloaded = case primAttackerIsEitherCreepOrTower (toFFITargetConstraintEvidence {a=a}) of
+export
+rangedMassAttack : (Attacker a) => (Attackable o) => a -> o -> JSIO (Either ScreepsError ())
+rangedMassAttack = case primAttackerIsEitherCreepOrTower (toFFITargetConstraintEvidence {a=a}) of
   Left _ => action2 "rangedMassAttack" prim__rangedMassAttack
   Right _ => action2 "attack" prim__attack
-
-export
-interface (ToFFISatisfiesConstraint PrimAttacker a) => Attacker a where
-  attack : (Attackable o) => a -> o -> JSIO (Either ScreepsError ())
-  attack = action2 "attack" prim__attack
-
-  rangedAttack : (Attackable o) => a -> o -> JSIO (Either ScreepsError ())
-  rangedAttack = rangedAttackOverloaded
-
-  rangedMassAttack : (Attackable o) => a -> o -> JSIO (Either ScreepsError ())
-  rangedMassAttack = rangedMassAttackOverloaded
     
-export
-ToFFISatisfiesConstraint PrimAttacker a => Attacker a where
-
 %foreign "javascript:lambda:(u, v, a, target) => a.heal(target)"
 prim__heal : PrimAction2
 
@@ -457,27 +542,34 @@ data PrimHealer : Type -> Type where
   PrimHealerCreep : PrimHealer Creep
   PrimHealerTower : PrimHealer Tower
 
+export
+%hint
+primHealerToPrimGameObject : PrimHealer a -> PrimGameObject a
+primHealerToPrimGameObject PrimHealerCreep = PrimGameObjectCreep
+primHealerToPrimGameObject PrimHealerTower = PrimGameObjectTower
+
+export
+interface ToFFISatisfiesConstraint PrimHealer a => Healer a where
+
+export
+ToFFISatisfiesConstraint PrimHealer a => Healer a where
+
+export
+heal : (Healer a) => (ToFFI o Creep) => a -> o -> JSIO (Either ScreepsError ())
+heal = action2 "heal" prim__heal
+
+export
+%hint
 primHealerIsEitherCreepOrTower : (val: PrimHealer a) -> Either (Equal val PrimHealerCreep) (Equal val PrimHealerTower)
 primHealerIsEitherCreepOrTower v = case v of
   PrimHealerCreep => Left Refl
   PrimHealerTower => Right Refl
 
 -- convenience overload so that tower's rangedHeal is heal under the hood
-rangedHealOverloaded : (ToFFISatisfiesConstraint PrimHealer a) => (ToFFI o Creep) => a -> o -> JSIO (Either ScreepsError ())
-rangedHealOverloaded = case primHealerIsEitherCreepOrTower (toFFITargetConstraintEvidence {a=a}) of
+rangedHeal : (Healer a) => (ToFFI o Creep) => a -> o -> JSIO (Either ScreepsError ())
+rangedHeal = case primHealerIsEitherCreepOrTower (toFFITargetConstraintEvidence {a=a}) of
   Left _ => action2 "rangedHeal" prim__rangedHeal
   Right _ => action2 "heal" prim__heal
-
-export
-interface (ToFFISatisfiesConstraint PrimHealer a) => Healer a where
-  heal : (ToFFI o Creep) => a -> o -> JSIO (Either ScreepsError ())
-  heal = action2 "heal" prim__heal
-
-  rangedHeal : (ToFFI o Creep) => a -> o -> JSIO (Either ScreepsError ())
-  rangedHeal = rangedHealOverloaded
-
-export
-ToFFISatisfiesConstraint PrimHealer a => Healer a where
 
 data PrimBodypart : Type where [external]
 
@@ -543,6 +635,11 @@ ToFFI Bodypart PrimBodypart where
   toFFI Heal = prim__bodypartHeal
   toFFI Tough = prim__bodypartTough
 
+public export
+%hint
+toFFIExistsPrimBodypart : {auto prf: ToFFI a PrimBodypart} -> ToFFIExists a
+toFFIExistsPrimBodypart = MkToFFIExists PrimBodypart prf
+
 export
 FromJSON Bodypart where
   fromJSON = fromJSONwithFromFFI
@@ -574,3 +671,116 @@ body creep = do
       val = do
         objs <- primJS $ prim__body (toFFI creep)
         pure $ Arr $ map Obj objs
+
+data PrimResource : Type where [external]
+
+%foreign "javascript:lambda:() => RESOURCE_ENERGY"
+prim__resourceEnergy : PrimResource
+
+data Resource = Energy
+%runElab derive "Resource" [Generic, Meta, Eq, Ord, Show]
+
+screepsResources : List (Resource, PrimResource)
+screepsResources = [
+  (Energy, prim__resourceEnergy)
+  ]
+
+SafeCast PrimResource where
+  safeCast v = choiceMap (checkBy eqv v) (map snd screepsResources)
+
+ToJSON PrimResource where
+  toJSON = Str . believe_me
+
+FromJSON PrimResource where
+  fromJSON = withString "PrimResource" (\n => case safeCast n of
+    Just v => pure v
+    Nothing => fail #"cannot cast \#{jsShow n} to PrimResource"#)
+
+FromFFI Resource PrimResource where
+  fromFFI v = choiceMap check screepsResources where
+    check : (err : (Resource, PrimResource)) -> Maybe Resource
+    check (e, pe) = if eqv v pe then Just e else Nothing
+
+ToFFI Resource PrimResource where
+  toFFI Energy = prim__resourceEnergy
+
+public export
+%hint
+toFFIExistsPrimResource : {auto prf: ToFFI a PrimResource} -> ToFFIExists a
+toFFIExistsPrimResource = MkToFFIExists PrimResource prf
+
+public export
+data PrimStore : Type -> Type where
+  PrimStoreCreep : PrimStore Creep
+  PrimStoreTower : PrimStore Tower
+  PrimStoreContainer : PrimStore Container
+
+export
+%hint
+primStoreToPrimGameObject : PrimStore a -> PrimGameObject a
+primStoreToPrimGameObject PrimStoreCreep = PrimGameObjectCreep
+primStoreToPrimGameObject PrimStoreTower = PrimGameObjectTower
+primStoreToPrimGameObject PrimStoreContainer = PrimGameObjectContainer
+
+data PrimMayHoldResource : (r : Resource) -> (a : Type) -> Type where
+  [search r, search a]
+  PrimMayHoldResourceEnergyCreep : PrimMayHoldResource Energy Creep
+  PrimMayHoldResourceEnergyTower : PrimMayHoldResource Energy Tower
+  PrimMayHoldResourceEnergyContainer : PrimMayHoldResource Energy Container
+
+export
+%hint
+primMayHoldResourceToPrimStore : PrimMayHoldResource r a -> PrimStore a
+primMayHoldResourceToPrimStore PrimMayHoldResourceEnergyCreep = PrimStoreCreep
+primMayHoldResourceToPrimStore PrimMayHoldResourceEnergyTower = PrimStoreTower
+primMayHoldResourceToPrimStore PrimMayHoldResourceEnergyContainer = PrimStoreContainer
+
+export
+interface ToFFISatisfiesConstraint PrimStore a => Store a where
+
+export
+ToFFISatisfiesConstraint PrimStore a => Store a where
+
+%foreign "javascript:lambda:(u, v, w, creep, target, resource) => creep.transfer(target, resource)"
+prim__transferAll : PrimAction3
+
+%foreign "javascript:lambda:(u, v, w, x, creep, target, resource, amount) => creep.transfer(target, resource, amount)"
+prim__transfer : PrimAction4
+
+%foreign "javascript:lambda:(u, v, w, creep, target, resource) => creep.withdraw(target, resource)"
+prim__withdrawAll : PrimAction3
+
+%foreign "javascript:lambda:(u, v, w, x, creep, target, resource, amount) => creep.withdraw(target, resource, amount)"
+prim__withdraw : PrimAction4
+
+%foreign "javascript:lambda:(u, v, x, y) => x.getCapacity(y)"
+prim__getCapacity : forall a, b . a -> b -> PrimIO Int32
+
+%foreign "javascript:lambda:(u, v, x, y) => x.getFreeCapacity(y)"
+prim__getFreeCapacity: forall a, b . a -> b -> PrimIO Int32
+
+%foreign "javascript:lambda:(u, v, x, y) => x.getUsedCapacity(y)"
+prim__getUsedCapacity: forall a, b . a -> b -> PrimIO Int32
+
+export
+interface ToFFISatisfiesConstraint (PrimMayHoldResource r) a => MayHoldResource r a where
+
+export
+ToFFISatisfiesConstraint (PrimMayHoldResource r) a => MayHoldResource r a where
+
+-- be careful with the argument order, which is different from the order in the original API for ease of currying
+-- transfer : (ToFFI c Creep) => c -> a -> (r : Resource) -> Int32 -> JSIO (Either ScreepsError ())
+-- transfer = action4 "transfer" prim__transfer
+-- withdrawAll : (ToFFI c Creep) => c -> a -> (r : Resource) -> JSIO (Either ScreepsError ())
+-- withdrawAll = action3 "withdrawAll" prim__withdrawAll
+-- withdraw : (ToFFI c Creep) => c -> a -> (r : Resource) -> Int32 -> JSIO (Either ScreepsError ())
+-- withdraw = action4 "withdraw" prim__withdraw
+-- getCapacity : (HasIO io) => a -> (r : Resource) -> io Int32
+-- getCapacity a r = primIO $ prim__getCapacity (toFFI@{toFFIImplementation} a) (toFFI r)
+-- getFreeCapacity : (HasIO io) => a -> (r : Resource) -> io Int32
+-- getFreeCapacity a r = primIO $ prim__getFreeCapacity (toFFI@{toFFIImplementation} a) (toFFI r)
+-- getUsedCapacity : (HasIO io) => a -> (r : Resource) -> io Int32
+-- getUsedCapacity a r = primIO $ prim__getUsedCapacity (toFFI@{toFFIImplementation} a) (toFFI r)
+
+-- test : (ToFFI c Creep) => (ToFFI d Creep) => c -> d -> JSIO (Either ScreepsError ())
+-- test cc dd = transferAll Energy cc dd
