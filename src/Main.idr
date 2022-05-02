@@ -35,7 +35,7 @@ tutorial2 = do
     | Nothing => consoleLog "creep not found"
   Just flag <- map head' $ getObjects Flag
     | Nothing => consoleLog "target not found"
-  Right _ <- moveTo creep flag
+  Right _ <- moveTo flag creep
     | Left err => consoleLog $ jsShow err
   consoleLog "approaching..."
 
@@ -47,9 +47,9 @@ tutorial3 = do
     | Nothing => consoleLog "creep not found"
   Just enemy <- map head' $ filterM ((map not) . my) creeps
     | Nothing => consoleLog "enemy not found"
-  Right okay <- attack creep enemy
+  Right okay <- attack enemy creep
     | Left _ => do
-      Right _ <- moveTo creep enemy
+      Right _ <- moveTo enemy creep
         | Left err => consoleLog $ jsShow err
       consoleLog "approaching..."
   consoleLog "attacking..."
@@ -67,7 +67,7 @@ GetConstraint AttackAction = Attackable
 GetConstraint HealAction = (\t => ToFFI t Creep)
 
 0 ConcreteActionType : CreepAction -> Type
-ConcreteActionType ca = (forall o . (GetConstraint ca) o => Creep -> o -> JSIO (Either ScreepsError ()))
+ConcreteActionType ca = (forall o . (GetConstraint ca) o => o -> Creep -> JSIO (Either ScreepsError ()))
 
 -- TODO: generalize this to multiple actions per bodypart
 concreteAction : (ca : CreepAction) -> ConcreteActionType ca
@@ -76,31 +76,31 @@ concreteAction AttackAction = attack
 concreteAction HealAction = heal
 
 concreteActionWhenApplicable : (ca : CreepAction) -> ConcreteActionType ca
-concreteActionWhenApplicable ca = (\creep, target => do
+concreteActionWhenApplicable ca = (\target, creep => do
   bodyparts <- body creep
   case any (\x => x.type == getBodypart ca) bodyparts of
-    True => concreteAction ca creep target
+    True => concreteAction ca target creep
     False => pure (Right ()))
 
 -- if either rangedAttack or attack fails due to out of range, move to target
 moveToAssault : (Attackable o) => o -> Creep -> JSIO ()
 moveToAssault target creep = do
   bodyparts <- body creep
-  rangedAttackResult <- concreteActionWhenApplicable RangedAttackAction creep target
-  attackResult <- concreteActionWhenApplicable AttackAction creep target
+  rangedAttackResult <- concreteActionWhenApplicable RangedAttackAction target creep
+  attackResult <- concreteActionWhenApplicable AttackAction target creep
   let r1 = rangedAttackResult
   let r2 = attackResult
   case (the (Either _ _) (rangedAttackResult >> attackResult)) of
     Right _ => pure ()
-    Left _ => ignore (moveTo creep target)
+    Left _ => ignore (moveTo target creep)
 
 moveToHeal : (ToFFI o Creep) => o -> Creep -> JSIO ()
 moveToHeal target creep = do
   bodyparts <- body creep
-  healResult <- concreteActionWhenApplicable HealAction creep target
+  healResult <- concreteActionWhenApplicable HealAction target creep
   case (the (Either _ _) (healResult)) of
     Right _ => pure ()
-    Left _ => ignore (moveTo creep target)
+    Left _ => ignore (moveTo target creep)
 
 -- creeps bodies
 tutorial4 : JSIO ()
@@ -116,5 +116,24 @@ tutorial4 = do
   ignore $ traverse (moveToHeal myWounded) myCreeps
   consoleLog "healing..."
 
+-- store and transfer
+tutorial5 : JSIO ()
+tutorial5 = do
+  creeps <- getObjects Creep
+  Just enemy <- map head' $ filterM ((map not) . my) creeps
+    | Nothing => consoleLog "enemy has been eliminated."
+  Just myCreep <- map head' $ filterM my creeps
+    | Nothing => consoleLog "creep not found."
+  Just myContainer <- map head' $ getObjects Container
+    | Nothing => consoleLog "no containers found."
+  Just myTower <- map head' $ (getObjects Tower) >>= filterM my
+    | Nothing => consoleLog "no towers found."
+  ignore $ attack enemy myTower
+  amt <- getUsedCapacity Energy myCreep
+  if amt > 0 then
+    ignore $ transferAll Energy myTower myCreep else
+    ignore $ withdrawAll Energy myContainer myCreep
+  
+  
 main : IO ()
-main = runJS tutorial4
+main = runJS tutorial5
