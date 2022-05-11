@@ -8,6 +8,18 @@ import Generics.Derive
 %default total
 %language ElabReflection
 
+export
+exists : (Type -> Type) -> Type
+exists c = {b : Type} -> ({a : Type} -> {prf : c a} -> a -> b) -> b
+
+export
+packExists : {c : Type -> Type} -> {a : Type} -> {auto prf : c a} -> a -> exists c
+packExists x = \f => f {a} {prf} x
+
+export
+unpackExists : {c : Type -> Type} -> exists c -> {b : Type} -> ({a : Type} -> {prf : c a} -> a -> b) -> b
+unpackExists exT = exT
+
 public export
 interface ToFFIExists a where
   constructor MkToFFIExists

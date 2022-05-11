@@ -31,7 +31,7 @@ tFFIExistsA = MkTFFIExists B prf
 
 interface (TFFIExists a) => TFFISatisfiesConstraint (0 c: Type -> Type) a where
   constructor MkTFFISatisfiesConstraint
-  toFFITargetConstraintEvidence : c (TFFITarget {a})
+  tFFITargetConstraintEvidence : c (TFFITarget {a})
 
 %hint
 withTFFIConstraint : (impl: TFFIExists a) -> c (TFFITarget@{impl}) -> TFFISatisfiesConstraint c a
@@ -87,12 +87,25 @@ exists : (Type -> Type) -> Type
 exists c = {b : Type} -> ({a : Type} -> {prf : c a} -> a -> b) -> b
 
 export
-packExists : {c : Type -> Type} -> {a : Type} -> {prf : c a} -> a -> exists c
+packExists : {c : Type -> Type} -> {a : Type} -> {auto prf : c a} -> a -> exists c
 packExists x = \f => f {a} {prf} x
 
 export
 unpackExists : {c : Type -> Type} -> exists c -> {b : Type} -> ({a : Type} -> {prf : c a} -> a -> b) -> b
-unpackExists exT {b} = exT {b}
+unpackExists exT = exT
 
-foo : {auto prf : TJSON B} -> exists TJSON
-foo = packExists {c=TJSON} {a=B} {prf=prf} BB
+foo : exists (TFFISatisfiesConstraint TJSON)
+-- foo = packExists {c=TFFISatisfiesConstraint TJSON} {a=A} {prf=prf} AA
+foo = packExists AA
+
+listFoo : List (exists (TFFISatisfiesConstraint TJSON))
+listFoo = [foo]
+
+eliminateTJSON : {auto a : Type} -> {auto prf : TFFISatisfiesConstraint TJSON a} -> a -> ()
+eliminateTJSON x = tJSON@{tFFITargetConstraintEvidence@{prf}} (tFFI@{tFFIImplementation} x)
+
+eliminate : exists (TFFISatisfiesConstraint TJSON) -> ()
+eliminate x = x eliminateTJSON
+
+listUnit : List ()
+listUnit = map eliminate listFoo
