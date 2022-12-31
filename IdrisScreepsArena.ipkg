@@ -10,4 +10,6 @@ version = 0.0.1
 main = Main
 executable = IdrisScreepsArena
 
-depends = js >= 0.0.1, sop >= 0.5.0, elab-util >= 0.5.0
+depends = dom >= 0.0.1, json >= 0.0.1, sop >= 0.5.0, elab-util >= 0.5.0
+
+postbuild = "bash postbuild.sh"

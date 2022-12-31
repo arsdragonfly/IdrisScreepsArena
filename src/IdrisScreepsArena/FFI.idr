@@ -1,12 +1,15 @@
 module IdrisScreepsArena.FFI
 
 import JS
-import JS.JSON
+import JSON.Derive
 import Data.SOP
 import Generics.Derive
 
 %default total
 %language ElabReflection
+
+%foreign "javascript:lambda:(u,o) => JSON.stringify(o)"
+prim__stringify : forall a . a -> String
 
 export
 exists : (Type -> Type) -> Type
@@ -110,10 +113,10 @@ toFFIExistsContainer = MkToFFIExists Container prf
 export
 FromFFI Container Container where fromFFI = Just
 
-toJSONwithToFFI : {auto tf : ToFFI a b} -> {auto tj : ToJSON b} -> (a -> Value)
+toJSONwithToFFI : Encoder v => {auto tf : ToFFI a b} -> {auto tj : ToJSON b} -> (a -> v)
 toJSONwithToFFI = toJSON@{tj} . toFFI@{tf}
 
-fromJSONwithFromFFI : {auto ff : FromFFI a b} -> {auto fj : FromJSON b} -> Parser a
+fromJSONwithFromFFI : forall v, obj . Value v obj => {auto ff : FromFFI a b} -> {auto fj : FromJSON b} -> Parser v a
 fromJSONwithFromFFI = \val => do
     bb <- fromJSON@{fj} val
     Just aa <- pure (fromFFI@{ff} bb)
@@ -139,7 +142,7 @@ SafeCast PrimScreepsOK where
   safeCast v = if eqv v prim__ok then Just prim__ok else Nothing
 
 ToJSON PrimScreepsOK where
-  toJSON = Num . believe_me
+  toJSON = smallInteger . believe_me
 
 FromJSON PrimScreepsOK where
   fromJSON = withNumber "PrimScreepsOK" (\n => case safeCast n of
@@ -149,7 +152,7 @@ FromJSON PrimScreepsOK where
 public export
 data ScreepsOK = OK
 
-%runElab derive "ScreepsOK" [Generic, Meta, Eq, Ord, Show]
+%runElab derive "ScreepsOK" [Generic, Meta, Derive.Eq.Eq, Derive.Ord.Ord, Derive.Show.Show]
 
 FromFFI ScreepsOK PrimScreepsOK where fromFFI _ = Just OK
 
@@ -205,7 +208,7 @@ prim__errNoBodypart : PrimScreepsError
 export
 data ScreepsError = ErrNotOwner | ErrNoPath | ErrNameExists | ErrBusy | ErrNotFound | ErrNotEnoughResources | ErrInvalidTarget | ErrFull | ErrNotInRange | ErrInvalidArgs | ErrTired | ErrNoBodypart
 
-%runElab derive "ScreepsError" [Generic, Meta, Eq, Ord, Show]
+%runElab derive "ScreepsError" [Generic, Meta, Derive.Eq.Eq, Derive.Ord.Ord, Derive.Show.Show]
 
 screepsErrors : List (ScreepsError, PrimScreepsError)
 screepsErrors = [
@@ -227,7 +230,7 @@ SafeCast PrimScreepsError where
   safeCast v = choiceMap (checkBy eqv v) (map snd screepsErrors)
 
 ToJSON PrimScreepsError where
-  toJSON = Num . believe_me
+  toJSON = smallInteger . believe_me
 
 FromJSON PrimScreepsError where
   fromJSON = withNumber "PrimScreepsError" (\n => case safeCast n of
@@ -612,7 +615,7 @@ prim__bodypartTough : PrimBodypart
 public export
 data Bodypart = Move | Work | Carry | Attack | RangedAttack | Heal | Tough
 
-%runElab derive "Bodypart" [Generic, Meta, Eq, Ord, Show]
+%runElab derive "Bodypart" [Generic, Meta, Derive.Eq.Eq, Derive.Ord.Ord, Derive.Show.Show]
 
 screepsBodyparts : List (Bodypart, PrimBodypart)
 screepsBodyparts = [
@@ -629,7 +632,7 @@ SafeCast PrimBodypart where
   safeCast v = choiceMap (checkBy eqv v) (map snd screepsBodyparts)
 
 ToJSON PrimBodypart where
-  toJSON = Str . believe_me
+  toJSON = string . believe_me
 
 FromJSON PrimBodypart where
   fromJSON = withString "PrimBodypart" (\n => case safeCast n of
@@ -669,7 +672,7 @@ record BodypartMounted where
   type : Bodypart
   hits : Int32
 
-%runElab derive "BodypartMounted" [Generic, Meta, Eq, Ord, Show, FromJSON1, ToJSON1]
+%runElab derive "BodypartMounted" [Generic, Meta, Derive.Eq.Eq, Derive.Ord.Ord, Derive.Show.Show, FromJSON, ToJSON]
 
 %foreign "javascript:lambda:(c, creep) => creep.body"
 prim__body : forall a . a -> PrimIO (IArray IObject)
@@ -677,15 +680,10 @@ prim__body : forall a . a -> PrimIO (IArray IObject)
 export
 body : (ToFFI c Creep) => c -> JSIO (List BodypartMounted)
 body creep = do
-  value <- val
-  case fromJSON value of
+  objs <- primJS $ prim__body (toFFI creep)
+  case decodeEither (prim__stringify objs) of
     Right result => pure result
     Left jsonErr => throwError $ Caught #"JSON decode failed for List BodypartMounted: \#{jsShow jsonErr}"#
-    where
-      val : JSIO Value
-      val = do
-        objs <- primJS $ prim__body (toFFI creep)
-        pure $ Arr $ map Obj objs
 
 data PrimResource : Type where [external]
 
@@ -695,7 +693,7 @@ prim__resourceEnergy : PrimResource
 public export
 data Resource = Energy
 
-%runElab derive "Resource" [Generic, Meta, Eq, Ord, Show]
+%runElab derive "Resource" [Generic, Meta, Derive.Eq.Eq, Derive.Ord.Ord, Derive.Show.Show]
 
 screepsResources : List (Resource, PrimResource)
 screepsResources = [
@@ -706,7 +704,7 @@ SafeCast PrimResource where
   safeCast v = choiceMap (checkBy eqv v) (map snd screepsResources)
 
 ToJSON PrimResource where
-  toJSON = Str . believe_me
+  toJSON = string . believe_me
 
 FromJSON PrimResource where
   fromJSON = withString "PrimResource" (\n => case safeCast n of

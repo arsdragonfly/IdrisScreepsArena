@@ -1,5 +1,5 @@
 # build artifacts
 build/
 main.mjs
-# ipkg is generated from dhall or toml
-Inigo.ipkg
+typings
+jsconfig.json
